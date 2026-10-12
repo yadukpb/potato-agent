@@ -18,4 +18,10 @@ AGENT_MAX_STEPS = int(os.environ.get("POTATO_AGENT_MAX_STEPS", "6"))
 AGENT_WORKSPACE = Path(os.environ.get("POTATO_WORKSPACE", ROOT / "workspace"))
 SHELL_TOOL_ENABLED = os.environ.get("POTATO_ALLOW_SHELL", "0") == "1"
 
+# 0-3, higher = more aggressive about filtering out non-speech (webrtcvad).
+# Raise this if background noise is triggering false starts.
+VAD_AGGRESSIVENESS = int(os.environ.get("POTATO_VAD_AGGRESSIVENESS", "2"))
+# Fall back to manual push-to-talk (old behavior) if VAD doesn't suit your mic/room.
+PUSH_TO_TALK = os.environ.get("POTATO_PUSH_TO_TALK", "0") == "1"
+
 AGENT_WORKSPACE.mkdir(parents=True, exist_ok=True)

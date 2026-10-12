@@ -13,18 +13,27 @@ Most "local AI" projects quietly assume you have a GPU. This one doesn't. The wh
 ## Architecture
 
 ```
-  mic ──► faster-whisper (STT) ──► ReAct agent loop ──► Piper (TTS) ──► speaker
-                                         │     │
-                                         │     └─► llama.cpp (Qwen2.5-3B, Q4_K_M)
-                                         ▼
-                              tools: web_search · calculator
-                                      file_op · run_shell_command
+  mic ──► webrtcvad (auto turn detection) ──► faster-whisper (STT) ──► ReAct agent loop ──► Piper (TTS, sentence-pipelined) ──► speaker
+                                                                             │     │
+                                                                             │     └─► llama.cpp (Qwen2.5-3B, Q4_K_M)
+                                                                             ▼
+                                                                  tools: web_search · calculator
+                                                                          file_op · run_shell_command
 ```
 
 - **LLM**: [llama.cpp](https://github.com/ggerganov/llama.cpp) running Qwen2.5-3B-Instruct, Q4_K_M quantization (~2GB)
+- **VAD**: [webrtcvad](https://github.com/wiseman/py-webrtcvad) for continuous listening — no push-to-talk by default, no torch dependency
 - **STT**: [faster-whisper](https://github.com/SYSTRAN/faster-whisper), `base.en`, int8 on CPU
-- **TTS**: [Piper](https://github.com/rhasspy/piper), real-time on CPU
+- **TTS**: [Piper](https://github.com/rhasspy/piper), real-time on CPU, sentence-pipelined (next sentence synthesizes while the current one plays)
 - **Agent loop**: hand-rolled ReAct over JSON, grammar-constrained — no LangChain/LangGraph, so it stays fast and easy to hack on
+
+### Conversational mode — what it is and isn't
+
+By default (`potato-agent`) the mic is always listening; you don't press anything to talk, and the agent auto-detects when you start and stop speaking (via VAD). The mic closes while the agent is replying, so it never hears itself — that's what makes automatic turn-taking work without echo cancellation.
+
+What it does **not** do yet: barge-in. You can't interrupt the agent mid-sentence by talking over it, the way ElevenLabs' conversational AI does — that needs real echo cancellation (to tell "you talking" apart from "mic picking up our own TTS output") or headphones to be reliable, and is a reasonable v2, not something bundled into this loop. If `POTATO_PUSH_TO_TALK=1` doesn't suit a noisy room, tune `POTATO_VAD_AGGRESSIVENESS` (0-3) first before falling back to it.
+
+Heads up if you're extending the VAD: webrtcvad is tuned for real speech/silence, not synthetic test signals — pure white noise can trip it at any aggressiveness setting, so don't use a synthetic sine/noise generator to validate changes here. Test with your actual mic and room.
 
 ### Why not llama.cpp's built-in OpenAI-style tool calling?
 
@@ -45,8 +54,11 @@ pip install -e .
 # text mode (fastest way to try it, no mic needed)
 potato-agent-text
 
-# voice mode (push-to-talk: press Enter to record, Enter again to stop)
+# voice mode — just start talking, no button to press
 potato-agent
+
+# or, if VAD misbehaves on your mic/room: push-to-talk fallback
+POTATO_PUSH_TO_TALK=1 potato-agent
 ```
 
 ## Tools the agent can use
@@ -79,12 +91,16 @@ All via environment variables (see `src/potato_agent/config.py`):
 | `POTATO_WHISPER_MODEL` | `base.en` | faster-whisper model size |
 | `POTATO_AGENT_MAX_STEPS` | `6` | tool-call steps before giving up |
 | `POTATO_ALLOW_SHELL` | `0` | enable the shell tool |
+| `POTATO_VAD_AGGRESSIVENESS` | `2` | 0-3, higher = more strict about filtering non-speech |
+| `POTATO_PUSH_TO_TALK` | `0` | fall back to manual press-Enter instead of continuous listening |
 
 Swap the LLM for anything else llama.cpp supports (bigger model if you have more RAM, smaller/faster if you don't) — it's one GGUF file and one path.
 
 ## Project status
 
-Early. Phase 1 (voice loop) and phase 2 (agentic tools) are both in; next up is wake-word/VAD instead of push-to-talk, and a proper eval set for the tool-calling reliability of small models. Issues and PRs welcome — the whole point of this repo is that people with modest hardware can actually run and improve it, not just read about it.
+Early. Phase 1 (voice loop), phase 2 (agentic tools), and continuous VAD-based conversation are all in. Verified so far: text-mode agent loop (plain Q&A, calculator, file ops) tested end-to-end on real hardware; VAD's silence-rejection and the sentence-splitting/pipelined TTS logic are unit-tested. **Not yet verified**: the live VAD loop against a real mic and real speech — that needs an actual person talking into an actual microphone, which hasn't happened yet. If you hit false starts or missed utterances, tune `POTATO_VAD_AGGRESSIVENESS` first and open an issue with what didn't work.
+
+Next up: barge-in (interrupting the agent mid-sentence), speculative decoding for faster generation, and a proper eval set for small-model tool-calling reliability. Issues and PRs welcome — the whole point of this repo is that people with modest hardware can actually run and improve it, not just read about it.
 
 ## License
 
