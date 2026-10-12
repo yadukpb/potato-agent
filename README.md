@@ -126,7 +126,7 @@ Swap the LLM for anything else llama.cpp supports (bigger model if you have more
 
 ## Project status
 
-Early, but the live voice loop has now actually been run against a real mic and real speech, not just unit-tested — plain Q&A, calculator/file-op tool calls, barge-in, and streamed speech all verified end-to-end on real hardware. If you hit false starts or missed utterances on your own mic/room, tune `POTATO_VAD_AGGRESSIVENESS` first and open an issue with what didn't work.
+Early, and there's no automated test suite yet (that's the next real gap to close, not VAD tuning). What's been verified is manual, end-to-end, on real hardware: plain Q&A, calculator/file-op tool calls, barge-in, and streamed speech all run against a real mic and real speech, not just read through. If you hit false starts or missed utterances on your own mic/room, tune `POTATO_VAD_AGGRESSIVENESS` first and open an issue with what didn't work.
 
 Also in: barge-in, speculative decoding + flash attention, sentence-streamed TTS with punctuation-driven pauses, and a startup warmup that cuts first-turn latency from ~9-11s to ~2-3s.
 
