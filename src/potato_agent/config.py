@@ -8,6 +8,10 @@ LLM_GGUF_PATH = Path(os.environ.get("POTATO_LLM_PATH", MODELS_DIR / "qwen2.5-3b-
 LLM_CTX_SIZE = int(os.environ.get("POTATO_LLM_CTX", "4096"))
 LLM_THREADS = int(os.environ.get("POTATO_LLM_THREADS", str(os.cpu_count() or 4)))
 LLM_MAX_TOKENS = int(os.environ.get("POTATO_LLM_MAX_TOKENS", "512"))
+LLM_FLASH_ATTN = os.environ.get("POTATO_LLM_FLASH_ATTN", "1") == "1"
+LLM_SPECULATIVE = os.environ.get("POTATO_LLM_SPECULATIVE", "1") == "1"
+LLM_NGRAM_SIZE = int(os.environ.get("POTATO_LLM_NGRAM_SIZE", "2"))
+LLM_NUM_PRED_TOKENS = int(os.environ.get("POTATO_LLM_NUM_PRED_TOKENS", "10"))
 
 WHISPER_MODEL_SIZE = os.environ.get("POTATO_WHISPER_MODEL", "base.en")
 WHISPER_COMPUTE_TYPE = os.environ.get("POTATO_WHISPER_COMPUTE", "int8")

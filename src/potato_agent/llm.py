@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 
 from llama_cpp import Llama, LlamaGrammar
+from llama_cpp.llama_speculative import LlamaPromptLookupDecoding
 
 from . import config
 
@@ -20,10 +21,37 @@ class LocalLLM:
             raise FileNotFoundError(
                 f"LLM model not found at {model_path}. Run scripts/setup_models.sh first."
             )
+
+        # Prompt-lookup speculative decoding: speculates upcoming tokens by
+        # matching n-grams already seen in the context, so it needs no
+        # second draft model/download. Works especially well for us because
+        # the agent's grammar-constrained JSON output and growing
+        # conversation history both have a lot of repeated structure for it
+        # to match against. Falls back to normal decoding with no quality
+        # loss when nothing matches.
+        draft_model = (
+            LlamaPromptLookupDecoding(
+                max_ngram_size=config.LLM_NGRAM_SIZE,
+                num_pred_tokens=config.LLM_NUM_PRED_TOKENS,
+            )
+            if config.LLM_SPECULATIVE
+            else None
+        )
+
         self._llama = Llama(
             model_path=model_path,
             n_ctx=n_ctx or config.LLM_CTX_SIZE,
             n_threads=n_threads or config.LLM_THREADS,
+            flash_attn=config.LLM_FLASH_ATTN,
+            draft_model=draft_model,
+            # llama-cpp-python sizes its internal scores buffer off this
+            # parameter directly, but sizes the *decode-time* writes off a
+            # separate internal flag that it force-sets to True whenever a
+            # draft_model is present. If we don't also pass True here, that
+            # buffer comes out n_batch-sized instead of n_ctx-sized and
+            # eval() overflows it past the first ~512 tokens. Upstream bug,
+            # worked around by keeping the two in sync ourselves.
+            logits_all=config.LLM_SPECULATIVE,
             verbose=False,
         )
 
