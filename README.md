@@ -1,14 +1,30 @@
-# potato-agent
+# potato-agent 🥔
 
-A fully agentic voice LLM that runs smoothly on a laptop with **no GPU, no VRAM, no cloud API**.
+**Can your hardware run a real agentic voice LLM? Probably. Find out your tier.**
 
-Talk to it. It can search the web, do math, read/write files, and (opt-in) run shell commands — all while staying entirely on your CPU and in your RAM. Built and daily-driven on a $400 laptop: AMD Ryzen 5 5500U, 14GB RAM, integrated graphics only.
+potato-agent is a fully agentic, voice-driven LLM — it searches the web, does math, reads/writes files, and talks back — running entirely on CPU. No GPU, no VRAM, no cloud API, no API key, no $20/month subscription.
 
-If it can run here, it'll run on basically anything.
+This is **not** trying to be as smooth as ElevenLabs or OpenAI's voice products. It isn't, and chasing that is a losing game — those are polished, funded, cloud-optimized products, and a 3B model on a laptop CPU will always lose that comparison. So this repo plays a different game: the [**🥔 Potato Leaderboard**](./LEADERBOARD.md) — how weak can your hardware be and still run this?
+
+```
+$ python scripts/benchmark.py
+============================================
+   🧈 CERTIFIED BUTTERED POTATO 🧈
+============================================
+  CPU:   AMD Ryzen 5 5500U with Radeon Graphics
+  Cores: 6c/12t
+  RAM:   15GB
+  TTFT:  1.48s
+  Speed: 8.9 tok/s
+  Tier:  🧈 Buttered Potato — comfortable conversation pace
+============================================
+```
+
+Run the benchmark, get your tier, [open a PR with your row](./LEADERBOARD.md). A Raspberry Pi Zero, a 2009 netbook, a Chromebook, a free-tier 1-vCPU VM — that's exactly what belongs on the leaderboard. Slow is the point.
 
 ## Why
 
-Most "local AI" projects quietly assume you have a GPU. This one doesn't. The whole pipeline — speech-to-text, the LLM, text-to-speech, and the agent loop — is chosen and tuned specifically for CPU-only, memory-constrained hardware. No framework overhead: the agent loop is ~80 lines of plain Python, not a LangChain graph.
+Most "local AI" projects quietly assume you have a GPU. This one doesn't, and it turns that constraint into the actual hook instead of apologizing for it. The whole pipeline — speech-to-text, the LLM, text-to-speech, and the agent loop — is chosen and tuned specifically for CPU-only, memory-constrained hardware. No framework overhead: the agent loop is ~80 lines of plain Python, not a LangChain graph.
 
 ## Architecture
 
@@ -70,15 +86,9 @@ POTATO_PUSH_TO_TALK=1 potato-agent
 | `file_op` | Read/write/list files, sandboxed to `workspace/` | on |
 | `run_shell_command` | Runs a shell command | **off** — set `POTATO_ALLOW_SHELL=1`, and every command still needs a y/n confirmation |
 
-## Benchmarks
+## Benchmarks & the leaderboard
 
-Run `python scripts/benchmark.py` after setup and paste your row here.
-
-| Hardware | RAM | Time to first token | Tokens/sec |
-|---|---|---|---|
-| AMD Ryzen 5 5500U (6c/12t) | 14GB | _run it_ | _run it_ |
-
-PRs with your own hardware's numbers welcome — that table is the point.
+See [LEADERBOARD.md](./LEADERBOARD.md) — this is the actual point of the repo, not a side note. Run `python scripts/benchmark.py`, get your potato tier, open a PR with your row.
 
 ## Configuration
 
