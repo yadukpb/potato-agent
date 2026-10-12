@@ -82,6 +82,26 @@ class LocalLLM:
         )
         return result["choices"][0]["message"]["content"]
 
+    def chat_json_stream(self, messages: list[dict], json_schema: dict, max_tokens: int | None = None):
+        """Streaming variant of chat_json: yields text deltas of the
+        grammar-constrained JSON as they're generated, instead of waiting
+        for the whole response. agent.py uses this to start speaking a
+        final_answer's text before the model finishes generating the rest
+        of the JSON object.
+        """
+        grammar = LlamaGrammar.from_json_schema(json.dumps(json_schema))
+        stream = self._llama.create_chat_completion(
+            messages=messages,
+            max_tokens=max_tokens or config.LLM_MAX_TOKENS,
+            temperature=0.2,
+            grammar=grammar,
+            stream=True,
+        )
+        for chunk in stream:
+            delta = chunk["choices"][0]["delta"]
+            if "content" in delta and delta["content"]:
+                yield delta["content"]
+
     def chat_stream(self, messages: list[dict], max_tokens: int | None = None, stop: list[str] | None = None):
         """Yields text chunks as they're generated."""
         stream = self._llama.create_chat_completion(

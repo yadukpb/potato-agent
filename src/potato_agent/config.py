@@ -28,4 +28,12 @@ VAD_AGGRESSIVENESS = int(os.environ.get("POTATO_VAD_AGGRESSIVENESS", "2"))
 # Fall back to manual push-to-talk (old behavior) if VAD doesn't suit your mic/room.
 PUSH_TO_TALK = os.environ.get("POTATO_PUSH_TO_TALK", "0") == "1"
 
+# Let the user interrupt the agent's own TTS playback by talking over it.
+# Without echo cancellation, the mic can hear the agent's own voice bleeding
+# in from the speakers, so barge-in uses a stricter (slower-to-trigger)
+# speech-onset threshold than normal turn-taking to resist false triggers.
+# Most reliable with headphones. Disable if it misfires on your setup.
+BARGE_IN_ENABLED = os.environ.get("POTATO_BARGE_IN", "1") == "1"
+VAD_BARGE_IN_FRAMES = int(os.environ.get("POTATO_VAD_BARGE_IN_FRAMES", "10"))  # ~300ms
+
 AGENT_WORKSPACE.mkdir(parents=True, exist_ok=True)

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import collections
 import queue
+from typing import Callable
 
 import numpy as np
 import sounddevice as sd
@@ -30,13 +31,29 @@ class VADListener:
     def __init__(self, aggressiveness: int | None = None):
         self._vad = webrtcvad.Vad(aggressiveness if aggressiveness is not None else config.VAD_AGGRESSIVENESS)
 
-    def listen_for_utterance(self) -> np.ndarray:
+    def listen_for_utterance(
+        self,
+        on_speech_start: Callable[[], None] | None = None,
+        required_speech_frames: Callable[[], int] | int | None = None,
+    ) -> np.ndarray:
         """Blocks until speech is detected and then trails off into silence.
 
         Returns the captured utterance as float32 PCM at 16kHz, ready for STT.
         Opens the mic only for the duration of one utterance — closing it
         afterward (the caller does TTS playback outside this call) is what
-        keeps the agent from hearing its own voice.
+        keeps the agent from hearing its own voice, for callers that aren't
+        doing barge-in.
+
+        on_speech_start, if given, fires exactly once, the moment speech
+        onset is detected (not when the utterance finishes). voice_loop.py
+        uses this to interrupt the agent's own TTS playback the instant the
+        user starts talking over it.
+
+        required_speech_frames overrides SPEECH_START_FRAMES, as a plain
+        int or as a zero-arg callable evaluated on every frame (so a caller
+        can demand a stricter, slower-to-trigger threshold -- e.g. while
+        its own TTS is still playing and might bleed into the mic -- then
+        relax back to the normal threshold once that's no longer a risk).
         """
         frame_queue: queue.Queue[bytes] = queue.Queue()
 
@@ -66,11 +83,18 @@ class VADListener:
                     preroll.append(frame_bytes)
                     if is_speech:
                         speech_run += 1
-                        if speech_run >= SPEECH_START_FRAMES:
+                        needed = (
+                            required_speech_frames()
+                            if callable(required_speech_frames)
+                            else required_speech_frames or SPEECH_START_FRAMES
+                        )
+                        if speech_run >= needed:
                             triggered = True
                             voiced_frames.extend(preroll)
                             preroll.clear()
                             silence_run = 0
+                            if on_speech_start is not None:
+                                on_speech_start()
                     else:
                         speech_run = 0
                 else:

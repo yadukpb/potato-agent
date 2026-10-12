@@ -5,6 +5,7 @@ from .agent import Agent
 def main():
     print("potato-agent (text mode). Ctrl+C to exit.\n")
     agent = Agent()
+    agent.warm_up()  # pays the LLM's one-time ~7s first-call cost now, not on your first message
     while True:
         try:
             user_input = input("you> ").strip()

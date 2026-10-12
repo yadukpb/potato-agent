@@ -1,23 +1,23 @@
 """Text-to-speech via Piper (CPU-only, real-time).
 
-speak() splits the reply into sentences and pipelines them: while sentence N
-is playing, sentence N+1 is already being synthesized on a background
-thread, so there's no audio gap waiting for the next chunk. This doesn't cut
-total synthesis time, but it cuts time-to-first-audio for multi-sentence
-replies instead of waiting for the whole reply to render before speaking.
+speak()/speak_stream() pipeline synthesis and playback sentence-by-sentence:
+while sentence N is playing, sentence N+1 is already being synthesized on a
+background thread, so there's no audio gap waiting for the next chunk.
 
-Full token-level streaming (starting to speak before the LLM has even
-finished generating the answer) isn't implemented here — the agent's answers
-are generated inside grammar-constrained JSON (see agent.py), and reliably
-extracting a finished sentence from a partially-streamed JSON string mid-
-generation is a real parsing problem, not just plumbing. Worth revisiting if
-answers get long enough for it to matter.
+speak_stream() takes that one step further: the sentences themselves can
+still be arriving (e.g. agent.py's on_sentence callback, called as the LLM's
+grammar-constrained JSON streams in -- see its _decode_partial_json_string).
+That cuts time-to-first-audio for the whole reply, not just for sentences
+2+, since playback of sentence 1 can start the moment the LLM finishes it
+rather than after the full response (which may still involve tool calls)
+has been generated.
 """
 from __future__ import annotations
 
 import queue
 import re
 import threading
+from typing import Iterable
 
 import numpy as np
 import sounddevice as sd
@@ -45,31 +45,49 @@ class TextToSpeech:
         self._voice = PiperVoice.load(voice_path)
 
     def _synthesize(self, text: str) -> np.ndarray:
-        # piper-tts >=1.8 renamed/removed synthesize_stream_raw; synthesize()
-        # now yields AudioChunk objects with an audio_int16_bytes property.
         pcm_chunks = [chunk.audio_int16_bytes for chunk in self._voice.synthesize(text)]
         if not pcm_chunks:
             return np.zeros(0, dtype=np.int16)
         return np.frombuffer(b"".join(pcm_chunks), dtype=np.int16)
 
-    def speak(self, text: str) -> None:
-        sentences = split_sentences(text)
-        if not sentences:
-            return
+    def speak(self, text: str, stop_event: threading.Event | None = None) -> None:
+        """Speak a complete, already-finished piece of text."""
+        self.speak_stream(split_sentences(text), stop_event=stop_event)
 
+    def speak_stream(self, sentences: Iterable[str], stop_event: threading.Event | None = None) -> None:
+        """Speak sentences as they arrive from `sentences` (a list, or a
+        generator still being fed from elsewhere -- iterating blocks until
+        the next sentence is available or the iterable ends).
+
+        If `stop_event` is given and gets set (e.g. by VAD detecting the
+        user has started talking over it -- see voice_loop.py's barge-in
+        wiring), playback is cut immediately rather than finishing the
+        current sentence or waiting for more to arrive.
+        """
         audio_queue: queue.Queue[np.ndarray | None] = queue.Queue(maxsize=1)
 
         def producer():
             for sentence in sentences:
-                audio_queue.put(self._synthesize(sentence))
+                if stop_event is not None and stop_event.is_set():
+                    break
+                if sentence.strip():
+                    audio_queue.put(self._synthesize(sentence))
             audio_queue.put(None)
 
         threading.Thread(target=producer, daemon=True).start()
 
         while True:
+            if stop_event is not None and stop_event.is_set():
+                sd.stop()
+                break
             audio = audio_queue.get()
             if audio is None:
                 break
             if audio.size:
                 sd.play(audio, samplerate=self._voice.config.sample_rate)
-                sd.wait()
+                stream = sd.get_stream()
+                while stream.active:
+                    if stop_event is not None and stop_event.is_set():
+                        sd.stop()
+                        break
+                    sd.sleep(30)
