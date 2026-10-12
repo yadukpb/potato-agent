@@ -9,7 +9,14 @@ import subprocess
 from .. import config
 
 NAME = "run_shell_command"
-DESCRIPTION = 'Run a shell command in the workspace directory. Args: {"command": "ls -la"}'
+DESCRIPTION = "Run a shell command in the workspace directory."
+PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "command": {"type": "string", "description": "The shell command to run, e.g. 'ls -la'"},
+    },
+    "required": ["command"],
+}
 
 TIMEOUT_SECONDS = 30
 

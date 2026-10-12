@@ -4,10 +4,16 @@ from pathlib import Path
 from .. import config
 
 NAME = "file_op"
-DESCRIPTION = (
-    'Read, write, or list files inside the sandboxed workspace. '
-    'Args: {"action": "read|write|list", "path": "notes.txt", "content": "..." (for write)}'
-)
+DESCRIPTION = "Read, write, or list files inside the sandboxed workspace."
+PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "action": {"type": "string", "enum": ["read", "write", "list"]},
+        "path": {"type": "string", "description": "Path relative to the workspace"},
+        "content": {"type": "string", "description": "Content to write (only for the write action)"},
+    },
+    "required": ["action"],
+}
 
 
 def _resolve(path_str: str) -> Path:

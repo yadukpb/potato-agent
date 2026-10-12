@@ -24,7 +24,13 @@ Most "local AI" projects quietly assume you have a GPU. This one doesn't. The wh
 - **LLM**: [llama.cpp](https://github.com/ggerganov/llama.cpp) running Qwen2.5-3B-Instruct, Q4_K_M quantization (~2GB)
 - **STT**: [faster-whisper](https://github.com/SYSTRAN/faster-whisper), `base.en`, int8 on CPU
 - **TTS**: [Piper](https://github.com/rhasspy/piper), real-time on CPU
-- **Agent loop**: hand-rolled ReAct over a JSON tool-call protocol — no LangChain/LangGraph, so it stays fast and easy to hack on
+- **Agent loop**: hand-rolled ReAct over JSON, grammar-constrained — no LangChain/LangGraph, so it stays fast and easy to hack on
+
+### Why not llama.cpp's built-in OpenAI-style tool calling?
+
+We tried it first (`chat_format="chatml-function-calling"` in llama-cpp-python). It has two real bugs that make it unusable for a multi-turn agent loop: its chat template has no branch for tool-result messages (they get silently dropped from the prompt), and when the model responds with free text instead of a tool call, the library constrains that generation with the wrong grammar — one meant for picking a function name or stopping — which corrupts every plain answer into garbage.
+
+Instead, `agent.py` builds its own small JSON Schema (`{"tool": ..., "args": ...}` or `{"final_answer": ...}`) and compiles it into a GBNF grammar via `LlamaGrammar.from_json_schema`, so llama.cpp masks logits during decoding and the model literally cannot generate invalid JSON. Same reliability win, without inheriting an upstream bug. See the comment at the top of `agent.py` for details.
 
 ## Quickstart
 

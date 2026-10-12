@@ -3,7 +3,14 @@ import ast
 import operator
 
 NAME = "calculator"
-DESCRIPTION = 'Evaluate a math expression. Args: {"expression": "2 * (3 + 4)"}'
+DESCRIPTION = "Evaluate a math expression."
+PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "expression": {"type": "string", "description": "A math expression, e.g. '2 * (3 + 4)'"},
+    },
+    "required": ["expression"],
+}
 
 _OPS = {
     ast.Add: operator.add,

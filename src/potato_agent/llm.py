@@ -1,7 +1,9 @@
 """Thin wrapper around llama.cpp for CPU-only inference."""
 from __future__ import annotations
 
-from llama_cpp import Llama
+import json
+
+from llama_cpp import Llama, LlamaGrammar
 
 from . import config
 
@@ -32,6 +34,23 @@ class LocalLLM:
             max_tokens=max_tokens or config.LLM_MAX_TOKENS,
             temperature=0.4,
             stop=stop,
+        )
+        return result["choices"][0]["message"]["content"]
+
+    def chat_json(self, messages: list[dict], json_schema: dict, max_tokens: int | None = None) -> str:
+        """Chat completion grammar-constrained to match the given JSON Schema.
+
+        Unlike regex-extracting JSON from free-form text, this guarantees the
+        returned string parses as valid JSON matching the schema's shape —
+        llama.cpp compiles the schema into a GBNF grammar and masks logits
+        during decoding so invalid tokens can't be generated at all.
+        """
+        grammar = LlamaGrammar.from_json_schema(json.dumps(json_schema))
+        result = self._llama.create_chat_completion(
+            messages=messages,
+            max_tokens=max_tokens or config.LLM_MAX_TOKENS,
+            temperature=0.2,
+            grammar=grammar,
         )
         return result["choices"][0]["message"]["content"]
 

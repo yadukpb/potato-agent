@@ -5,10 +5,17 @@ _MODULES = [calculator, web_search, shell, files]
 
 REGISTRY = {m.NAME: m for m in _MODULES}
 
-
-def describe_tools() -> str:
-    lines = [f"- {m.NAME}: {m.DESCRIPTION}" for m in _MODULES]
-    return "\n".join(lines)
+TOOLS_SCHEMA = [
+    {
+        "type": "function",
+        "function": {
+            "name": m.NAME,
+            "description": m.DESCRIPTION,
+            "parameters": m.PARAMETERS,
+        },
+    }
+    for m in _MODULES
+]
 
 
 def call_tool(name: str, args: dict) -> str:

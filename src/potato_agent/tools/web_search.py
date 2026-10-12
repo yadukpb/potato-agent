@@ -2,7 +2,15 @@
 from ddgs import DDGS
 
 NAME = "web_search"
-DESCRIPTION = 'Search the web. Args: {"query": "latest news on x", "max_results": 3}'
+DESCRIPTION = "Search the web via DuckDuckGo."
+PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "query": {"type": "string", "description": "Search query"},
+        "max_results": {"type": "integer", "description": "Number of results to return", "default": 3},
+    },
+    "required": ["query"],
+}
 
 
 def run(args: dict) -> str:
