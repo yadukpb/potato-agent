@@ -1,0 +1,21 @@
+import os
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+MODELS_DIR = Path(os.environ.get("POTATO_MODELS_DIR", ROOT / "models"))
+
+LLM_GGUF_PATH = Path(os.environ.get("POTATO_LLM_PATH", MODELS_DIR / "qwen2.5-3b-instruct-q4_k_m.gguf"))
+LLM_CTX_SIZE = int(os.environ.get("POTATO_LLM_CTX", "4096"))
+LLM_THREADS = int(os.environ.get("POTATO_LLM_THREADS", str(os.cpu_count() or 4)))
+LLM_MAX_TOKENS = int(os.environ.get("POTATO_LLM_MAX_TOKENS", "512"))
+
+WHISPER_MODEL_SIZE = os.environ.get("POTATO_WHISPER_MODEL", "base.en")
+WHISPER_COMPUTE_TYPE = os.environ.get("POTATO_WHISPER_COMPUTE", "int8")
+
+PIPER_VOICE_PATH = Path(os.environ.get("POTATO_PIPER_VOICE", MODELS_DIR / "en_US-lessac-medium.onnx"))
+
+AGENT_MAX_STEPS = int(os.environ.get("POTATO_AGENT_MAX_STEPS", "6"))
+AGENT_WORKSPACE = Path(os.environ.get("POTATO_WORKSPACE", ROOT / "workspace"))
+SHELL_TOOL_ENABLED = os.environ.get("POTATO_ALLOW_SHELL", "0") == "1"
+
+AGENT_WORKSPACE.mkdir(parents=True, exist_ok=True)
