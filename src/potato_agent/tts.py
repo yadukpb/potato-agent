@@ -11,6 +11,16 @@ That cuts time-to-first-audio for the whole reply, not just for sentences
 2+, since playback of sentence 1 can start the moment the LLM finishes it
 rather than after the full response (which may still involve tool calls)
 has been generated.
+
+Delivery (_prosody_for, _pause_seconds): this voice model (en_US-lessac-
+medium) is single-speaker with no emotion/style conditioning at all -- we
+looked at swapping to Kokoro (StyleTTS2-based, genuinely more expressive)
+and measured it at 0.67x real-time on this CPU vs. Piper's 18x, so it can't
+keep up with its own playback here and is out. What's actually available is
+heuristic: a trailing silence instead of sentences running into each other
+back-to-back, sized by how the sentence ends, and small punctuation-driven
+nudges to Piper's own pacing/noise knobs. It's not learned emotion, just
+better rhythm -- worth being honest about that distinction.
 """
 from __future__ import annotations
 
@@ -21,11 +31,17 @@ from typing import Iterable
 
 import numpy as np
 import sounddevice as sd
+from piper.config import SynthesisConfig
 from piper.voice import PiperVoice
 
 from . import config
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+# en_US-lessac-medium's own trained defaults (see its PiperConfig) -- nudges
+# below are deltas from these, not absolute values.
+_BASE_NOISE_SCALE = 0.667
+_BASE_NOISE_W_SCALE = 0.8
 
 
 def split_sentences(text: str) -> list[str]:
@@ -33,6 +49,32 @@ def split_sentences(text: str) -> list[str]:
     if not text:
         return []
     return [s.strip() for s in _SENTENCE_SPLIT_RE.split(text) if s.strip()]
+
+
+def _pause_seconds(sentence: str) -> float:
+    """How much silence to leave after this sentence before the next one."""
+    s = sentence.rstrip()
+    if s.endswith("..."):
+        return 0.55  # trailing off / hesitation
+    if s and s[-1] in "!?":
+        return 0.30
+    if s.endswith("."):
+        return 0.25
+    return 0.12  # no terminal punctuation -- a fragment, keep it tight
+
+
+def _prosody_for(sentence: str) -> SynthesisConfig:
+    """Small punctuation-driven nudges to Piper's pacing/noise knobs.
+
+    This is a cheap heuristic, not learned emotion -- the voice model has no
+    style conditioning to actually draw on (see module docstring).
+    """
+    s = sentence.rstrip()
+    if s.endswith("!"):
+        return SynthesisConfig(length_scale=0.92, noise_scale=_BASE_NOISE_SCALE + 0.08)
+    if s.endswith("?"):
+        return SynthesisConfig(noise_w_scale=_BASE_NOISE_W_SCALE + 0.15)
+    return SynthesisConfig()
 
 
 class TextToSpeech:
@@ -45,10 +87,16 @@ class TextToSpeech:
         self._voice = PiperVoice.load(voice_path)
 
     def _synthesize(self, text: str) -> np.ndarray:
-        pcm_chunks = [chunk.audio_int16_bytes for chunk in self._voice.synthesize(text)]
+        syn_config = _prosody_for(text)
+        pcm_chunks = [chunk.audio_int16_bytes for chunk in self._voice.synthesize(text, syn_config=syn_config)]
         if not pcm_chunks:
             return np.zeros(0, dtype=np.int16)
-        return np.frombuffer(b"".join(pcm_chunks), dtype=np.int16)
+        audio = np.frombuffer(b"".join(pcm_chunks), dtype=np.int16)
+
+        pause_samples = int(_pause_seconds(text) * self._voice.config.sample_rate)
+        if pause_samples > 0:
+            audio = np.concatenate([audio, np.zeros(pause_samples, dtype=np.int16)])
+        return audio
 
     def speak(self, text: str, stop_event: threading.Event | None = None) -> None:
         """Speak a complete, already-finished piece of text."""
