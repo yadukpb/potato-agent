@@ -45,7 +45,9 @@ class TextToSpeech:
         self._voice = PiperVoice.load(voice_path)
 
     def _synthesize(self, text: str) -> np.ndarray:
-        pcm_chunks = list(self._voice.synthesize_stream_raw(text))
+        # piper-tts >=1.8 renamed/removed synthesize_stream_raw; synthesize()
+        # now yields AudioChunk objects with an audio_int16_bytes property.
+        pcm_chunks = [chunk.audio_int16_bytes for chunk in self._voice.synthesize(text)]
         if not pcm_chunks:
             return np.zeros(0, dtype=np.int16)
         return np.frombuffer(b"".join(pcm_chunks), dtype=np.int16)
