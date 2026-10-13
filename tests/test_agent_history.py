@@ -99,6 +99,24 @@ def test_clear_history_resets_to_a_fresh_conversation():
     ]
 
 
+def test_on_step_fires_once_per_step_with_parsed_json():
+    llm = FakeLLM(
+        [
+            '{"tool": "calculator", "args": {"expression": "2 + 2"}}',
+            '{"final_answer": "4."}',
+        ]
+    )
+    agent = Agent(llm=llm)
+    steps = []
+
+    agent.run("what's 2 + 2?", verbose=False, on_step=steps.append)
+
+    assert steps == [
+        {"tool": "calculator", "args": {"expression": "2 + 2"}},
+        {"final_answer": "4."},
+    ]
+
+
 def test_step_limit_fallback_is_still_remembered():
     # Every step returns a tool call, never a final_answer, so the agent
     # exhausts max_steps -- the fallback message should still end up in

@@ -34,15 +34,18 @@ Set POTATO_PUSH_TO_TALK=1 to fall back to the old manual press-Enter mode,
 e.g. if VAD doesn't suit your mic/room (this also disables barge-in, since
 there's no continuous mic stream to listen on while speaking).
 """
+import logging
 import queue
 import threading
 from typing import Iterator
 
-from . import config
-from .agent import Agent
+from . import config, logging_setup
+from .agent import Agent, is_reset_command
 from .stt import SpeechToText
 from .tts import TextToSpeech
 from .vad import SPEECH_START_FRAMES, VADListener
+
+log = logging.getLogger(__name__)
 
 _SENTINEL = object()
 
@@ -72,9 +75,19 @@ def _speak_streaming(
     sentence_queue: queue.Queue = queue.Queue()
 
     def generate():
-        answer = agent.run(text, on_sentence=sentence_queue.put)
-        sentence_queue.put(_SENTINEL)
-        print(f"agent: {answer}")
+        # Must always put _SENTINEL, even on failure -- _drain() (and so
+        # speak_thread, and so this turn's speak_thread.join() in main())
+        # blocks on sentence_queue.get() forever otherwise, since a dead
+        # thread's exception doesn't propagate anywhere and there'd be
+        # nothing left to unblock the consumer.
+        try:
+            answer = agent.run(text, on_sentence=sentence_queue.put)
+            print(f"agent: {answer}")
+        except Exception:
+            log.exception("agent.run() failed mid-turn")
+            print("(that turn failed -- see the error above -- still listening)")
+        finally:
+            sentence_queue.put(_SENTINEL)
 
     agent_thread = threading.Thread(target=generate, daemon=True)
     agent_thread.start()
@@ -87,20 +100,33 @@ def _speak_streaming(
 
 
 def main():
+    logging_setup.configure()
     print("potato-agent (voice mode). Loading models...")
-    stt = SpeechToText()
-    tts = TextToSpeech()
-    agent = Agent()
-    agent.warm_up()  # pays the LLM's one-time ~7s first-call cost now, not on your first turn
-    vad = None if config.PUSH_TO_TALK else VADListener()
+    try:
+        stt = SpeechToText()
+        tts = TextToSpeech()
+        agent = Agent()
+        agent.warm_up()  # pays the LLM's one-time ~7s first-call cost now, not on your first turn
+        vad = None if config.PUSH_TO_TALK else VADListener()
+    except FileNotFoundError as e:
+        print(f"\n{e}")
+        raise SystemExit(1)
+    except OSError as e:
+        # sounddevice/portaudio raises this for "no input device found" etc.
+        print(f"\nCouldn't access audio hardware: {e}")
+        raise SystemExit(1)
+
     barge_in = vad is not None and config.BARGE_IN_ENABLED
 
     if config.PUSH_TO_TALK:
-        print("Ready (push-to-talk mode). Ctrl+C to exit.\n")
+        print("Ready (push-to-talk mode). Say 'reset' to clear history. Ctrl+C to exit.\n")
     elif barge_in:
-        print("Ready — just start talking. Talk over me any time to interrupt. Ctrl+C to exit.\n")
+        print(
+            "Ready — just start talking. Talk over me any time to interrupt, "
+            "or say 'reset' to clear history. Ctrl+C to exit.\n"
+        )
     else:
-        print("Ready — just start talking. Ctrl+C to exit.\n")
+        print("Ready — just start talking. Say 'reset' to clear history. Ctrl+C to exit.\n")
 
     pending_audio = None  # an utterance already captured while the agent was still speaking
 
@@ -124,6 +150,12 @@ def main():
                 continue
             print(f"you said: {text}")
 
+            if is_reset_command(text):
+                agent.clear_history()
+                print("(conversation history cleared)")
+                tts.speak("Okay, starting fresh.")
+                continue
+
             interrupted = threading.Event()
             agent_thread, speak_thread = _speak_streaming(agent, tts, text, interrupted)
 
@@ -142,6 +174,13 @@ def main():
         except KeyboardInterrupt:
             print("\nbye.")
             break
+        except Exception:
+            # A glitch in STT/VAD/TTS for one turn shouldn't end the whole
+            # session -- log it and keep listening rather than crashing the
+            # process out from under whoever's talking to it.
+            log.exception("voice loop turn failed, still listening")
+            print("(something went wrong that turn -- see the error above -- still listening)")
+            pending_audio = None
 
 
 if __name__ == "__main__":

@@ -68,6 +68,53 @@ def _decode_partial_json_string(raw: str, start: int) -> str:
     return "".join(out)
 
 
+_RESET_PREFIXES = ("hey ", "okay ", "ok ", "please ", "can you ", "could you ", "would you ")
+_RESET_PHRASES = frozenset(
+    {
+        "reset",
+        "reset conversation",
+        "reset the conversation",
+        "clear history",
+        "clear your history",
+        "clear the history",
+        "clear your memory",
+        "clear memory",
+        "forget everything",
+        "forget our conversation",
+        "forget what we talked about",
+        "start over",
+        "start a new conversation",
+        "new conversation",
+    }
+)
+
+
+def is_reset_command(text: str) -> bool:
+    """True if `text` is (just) a request to clear conversation history.
+
+    Text mode has an exact "/reset" command, but voice mode has no typed
+    input to match against -- this is its equivalent, matched against a
+    fixed set of natural-language phrases after stripping punctuation and
+    a few common leading politeness words ("please reset", "can you reset
+    the conversation", ...).
+
+    Deliberately an exact match against the whole (stripped) utterance, not
+    a substring/fuzzy one: a false positive here silently wipes context,
+    which is worse than making a user rephrase once. "reset" on its own
+    matches, but "can you reset my password" does not.
+    """
+    normalized = re.sub(r"[^a-z0-9\s]", "", text.lower())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    stripped = True
+    while stripped:
+        stripped = False
+        for prefix in _RESET_PREFIXES:
+            if normalized.startswith(prefix):
+                normalized = normalized[len(prefix) :]
+                stripped = True
+    return normalized in _RESET_PHRASES
+
+
 def _tool_docs() -> str:
     lines = []
     for t in TOOLS_SCHEMA:
@@ -87,12 +134,20 @@ information to answer, respond immediately with final_answer — do not take
 any further actions beyond what the user actually asked for. Keep
 final_answer short and conversational, since it may be spoken aloud.
 
+Any request to read, write, or list a file is a file_op call, every single
+time -- never respond with final_answer claiming a file was read, written,
+or listed unless you actually called file_op for it first in this
+conversation.
+
 Examples:
 User: "What's 12 times 4?"
 {{"thought": "Need the calculator.", "tool": "calculator", "args": {{"expression": "12 * 4"}}}}
 
 User: "Save the word 'hello' to notes.txt"
 {{"thought": "Writing the requested file.", "tool": "file_op", "args": {{"action": "write", "path": "notes.txt", "content": "hello"}}}}
+
+User: "What files are in the workspace?"
+{{"thought": "Need to actually list them, not guess.", "tool": "file_op", "args": {{"action": "list", "path": ""}}}}
 
 User: "What's the tallest mountain?"
 {{"thought": "This is general knowledge, no tool needed.", "final_answer": "Mount Everest, at about 8,849 meters."}}"""
@@ -177,6 +232,7 @@ class Agent:
         user_input: str,
         verbose: bool = True,
         on_sentence: Callable[[str], None] | None = None,
+        on_step: Callable[[dict], None] | None = None,
     ) -> str:
         """Runs the ReAct loop to completion and returns the final answer text.
 
@@ -186,6 +242,14 @@ class Agent:
         TTS can start speaking immediately instead of waiting for the whole
         reply. It only ever fires for the turn that produces final_answer;
         tool-call steps are internal and never spoken.
+
+        on_step, if given, is called once per loop iteration with that
+        step's parsed JSON response ({"tool": ..., "args": ...} or
+        {"final_answer": ...}) right after it's decoded, before the tool
+        actually runs. Unlike on_sentence it fires for every step, not just
+        the final one -- scripts/eval_tools.py uses it to check which tool
+        (if any) the model picked on the *first* step, not just whether it
+        eventually landed on the right final answer.
 
         Prior turns are included via self.history, so a follow-up question
         ("what about in Celsius?") has context from what was actually asked
@@ -249,6 +313,9 @@ class Agent:
                 answer = raw.strip()
                 self._remember(user_input, answer)
                 return answer
+
+            if on_step is not None:
+                on_step(parsed)
 
             if "final_answer" in parsed:
                 answer = str(parsed["final_answer"]).strip()
