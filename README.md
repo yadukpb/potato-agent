@@ -130,15 +130,17 @@ All via environment variables (see `src/potato_agent/config.py`):
 | `POTATO_PUSH_TO_TALK` | `0` | fall back to manual press-Enter instead of continuous listening |
 | `POTATO_BARGE_IN` | `1` | interrupt the agent's own TTS by talking over it |
 | `POTATO_VAD_BARGE_IN_FRAMES` | `10` (~300ms) | stricter speech-onset threshold used only while the agent is speaking |
-| `POTATO_FORCE_IPV4` | `0` | force IPv4-only DNS resolution, for networks where IPv6 routes to model-download hosts hang instead of failing fast |
+| `POTATO_FORCE_IPV4` | `0` | force IPv4-only DNS resolution, for networks where IPv6 routes to model-download/HF-hub hosts hang instead of failing fast |
 
 Swap the LLM for anything else llama.cpp supports (bigger model if you have more RAM, smaller/faster if you don't) — it's one GGUF file and one path.
+
+Heads up: `faster-whisper` checks Hugging Face Hub for model updates on load even when the model is already cached locally, so `POTATO_FORCE_IPV4` can matter for *every* startup on an affected network, not just the first (model-download) one — this hung `SpeechToText()` for minutes in testing before the var was set. It's also only read from your actual environment, so it does nothing if it's set in `~/.bashrc` but you're launching from a context that doesn't source it (a non-interactive shell, a service unit, etc.) — export it explicitly in whatever actually launches the process if that's your setup.
 
 ## Project status
 
 Early. There's a pytest suite (`pytest`, 60+ cases) covering the pure-logic pieces that don't need a mic or a loaded model: the calculator's AST whitelist (rejects `__import__`, attribute access, name lookups), the file-op sandbox (path-traversal/absolute-path escapes), the shell tool's disabled-by-default and confirm-before-running behavior, the potato-tier boundaries, the TTS pause/prosody heuristics, and — the one that mattered most to get right — the streaming JSON decoder that lets TTS start speaking sentence 1 before the LLM finishes the rest of the reply, exercised char-by-char against a fake LLM. What's still manual, end-to-end, on real hardware: plain Q&A, barge-in, and streamed speech against a real mic and real speech — those aren't mocked anywhere, so if you hit false starts or missed utterances on your own mic/room, tune `POTATO_VAD_AGGRESSIVENESS` first and open an issue with what didn't work.
 
-Also in: barge-in, speculative decoding + flash attention, sentence-streamed TTS with punctuation-driven pauses, a startup warmup that cuts first-turn latency from ~9-11s to ~2-3s, and bounded multi-turn conversation memory.
+Also in: barge-in, speculative decoding + flash attention, sentence-streamed TTS with punctuation-driven pauses, a startup warmup that cuts first-turn latency from ~9-11s to ~2-3s, and bounded multi-turn conversation memory — verified live against the real model (told it a name and a favorite color in turn 1, asked for both back in turn 2, got both back correctly), and confirmed the full voice stack (STT + TTS + VAD + Agent) boots and listens end-to-end on real hardware with a real mic.
 
 Next up: a spoken/voice-mode way to reset conversation history (text mode has `/reset`, voice mode doesn't yet), and a proper eval set for small-model tool-calling reliability. Issues and PRs welcome — the whole point of this repo is that people with modest hardware can actually run and improve it, not just read about it.
 
