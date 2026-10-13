@@ -1,5 +1,7 @@
 # potato-agent 🥔
 
+![tests](https://github.com/yadukpb/potato-agent/actions/workflows/tests.yml/badge.svg)
+
 **Can your hardware run a real agentic voice LLM? Probably. Find out your tier.**
 
 potato-agent is a fully agentic, voice-driven LLM — it searches the web, does math, reads/writes files, and talks back — running entirely on CPU. No GPU, no VRAM, no cloud API, no API key, no $20/month subscription.
@@ -53,7 +55,7 @@ By default (`potato-agent`) the mic is always listening; you don't press anythin
 
 **Startup warmup**: the first LLM call in a process pays a one-time ~7-9s cost (llama.cpp backend/thread-pool init), and separately, llama-cpp-python caches the longest matching prompt *prefix* across calls and skips re-evaluating it. Since every turn's prompt starts with the same system prompt, `Agent.warm_up()` pre-runs a throwaway generation with that exact prompt during "Loading models...", so the KV cache is already warm by the time you can talk — dropped the first real turn from ~9-11s to ~2-3s.
 
-**Conversation memory**: `Agent` keeps the last `POTATO_HISTORY_TURNS` (user, assistant) pairs from completed turns and includes them in every subsequent prompt, so a follow-up ("what about in Celsius?") actually has context from what you asked and were told before. A turn's internal tool-call/tool-result scratch is never kept, only the final exchange — the same thing that is and isn't spoken (see `agent.py`'s `run()` docstring). History is bounded because the context window is small and finite; once it fills, the oldest pair is dropped, which also means that one turn's prompt no longer shares a full prefix with the previous one, so it misses the llama-cpp-python KV-cache win described above just for that turn. In the text REPL, type `/reset` to start a fresh conversation; in voice mode, restarting the process is currently the only way (same as it always was) — a spoken reset command is easy to add but isn't wired up yet.
+**Conversation memory**: `Agent` keeps the last `POTATO_HISTORY_TURNS` (user, assistant) pairs from completed turns and includes them in every subsequent prompt, so a follow-up ("what about in Celsius?") actually has context from what you asked and were told before. A turn's internal tool-call/tool-result scratch is never kept, only the final exchange — the same thing that is and isn't spoken (see `agent.py`'s `run()` docstring). History is bounded because the context window is small and finite; once it fills, the oldest pair is dropped, which also means that one turn's prompt no longer shares a full prefix with the previous one, so it misses the llama-cpp-python KV-cache win described above just for that turn. In the text REPL, type `/reset` to start a fresh conversation; in voice mode, just say "reset" (or "clear history", "forget everything", "start over", with or without a leading "please"/"can you") — `agent.is_reset_command()` matches a fixed set of exact phrases rather than fuzzy-matching, since a false positive there silently wipes context mid-conversation.
 
 Heads up if you're extending the VAD: webrtcvad is tuned for real speech/silence, not synthetic test signals — pure white noise can trip it at any aggressiveness setting, so don't use a synthetic sine/noise generator to validate changes here. Test with your actual mic and room.
 
@@ -111,6 +113,16 @@ pytest
 
 See [LEADERBOARD.md](./LEADERBOARD.md) — this is the actual point of the repo, not a side note. Run `python scripts/benchmark.py`, get your potato tier, open a PR with your row.
 
+## Tool-calling reliability eval
+
+`scripts/eval_tools.py` runs a fixed set of prompts against the real model and checks whether `Agent.run()`'s first step picks the right tool (or correctly picks none) via its `on_step` callback — judging the tool *choice*, not the final answer text, since a model that mis-picks a tool but still stumbles into a plausible-looking answer is exactly the failure mode this is meant to catch.
+
+```bash
+python scripts/eval_tools.py
+```
+
+This is how a real bug got caught: the first version of `SYSTEM_PROMPT` made the model skip `file_op` entirely on every file read/write/list request, instead silently answering with a false claim like *"test.txt has been created and 'hello world' has been written to it"* — no file was ever written. Tool-choice accuracy on the eval set was 69% before fixing the prompt (an explicit "any file request is always a file_op call" rule, plus a `list`-action example) and 94%/16 after, re-measured against the same real model. The one remaining miss is defensible (it called `web_search` for "tell me a fun fact about octopuses" instead of answering directly) rather than a correctness bug.
+
 ## Configuration
 
 All via environment variables (see `src/potato_agent/config.py`):
@@ -131,6 +143,7 @@ All via environment variables (see `src/potato_agent/config.py`):
 | `POTATO_BARGE_IN` | `1` | interrupt the agent's own TTS by talking over it |
 | `POTATO_VAD_BARGE_IN_FRAMES` | `10` (~300ms) | stricter speech-onset threshold used only while the agent is speaking |
 | `POTATO_FORCE_IPV4` | `0` | force IPv4-only DNS resolution, for networks where IPv6 routes to model-download/HF-hub hosts hang instead of failing fast |
+| `POTATO_LOG_LEVEL` | `INFO` | level for potato-agent's own internal diagnostics (recovered mid-turn errors, etc.) — never affects the conversational output itself, or third-party libraries' own logging |
 
 Swap the LLM for anything else llama.cpp supports (bigger model if you have more RAM, smaller/faster if you don't) — it's one GGUF file and one path.
 
@@ -140,9 +153,13 @@ Heads up: `faster-whisper` checks Hugging Face Hub for model updates on load eve
 
 Early. There's a pytest suite (`pytest`, 60+ cases) covering the pure-logic pieces that don't need a mic or a loaded model: the calculator's AST whitelist (rejects `__import__`, attribute access, name lookups), the file-op sandbox (path-traversal/absolute-path escapes), the shell tool's disabled-by-default and confirm-before-running behavior, the potato-tier boundaries, the TTS pause/prosody heuristics, and — the one that mattered most to get right — the streaming JSON decoder that lets TTS start speaking sentence 1 before the LLM finishes the rest of the reply, exercised char-by-char against a fake LLM. What's still manual, end-to-end, on real hardware: plain Q&A, barge-in, and streamed speech against a real mic and real speech — those aren't mocked anywhere, so if you hit false starts or missed utterances on your own mic/room, tune `POTATO_VAD_AGGRESSIVENESS` first and open an issue with what didn't work.
 
-Also in: barge-in, speculative decoding + flash attention, sentence-streamed TTS with punctuation-driven pauses, a startup warmup that cuts first-turn latency from ~9-11s to ~2-3s, and bounded multi-turn conversation memory — verified live against the real model (told it a name and a favorite color in turn 1, asked for both back in turn 2, got both back correctly), and confirmed the full voice stack (STT + TTS + VAD + Agent) boots and listens end-to-end on real hardware with a real mic.
+Also in: barge-in, speculative decoding + flash attention, sentence-streamed TTS with punctuation-driven pauses, a startup warmup that cuts first-turn latency from ~9-11s to ~2-3s, bounded multi-turn conversation memory, and a spoken "reset" command — verified live against the real model (told it a name and a favorite color in turn 1, asked for both back in turn 2, got both back correctly), and confirmed the full voice stack (STT + TTS + VAD + Agent) boots and listens end-to-end on real hardware with a real mic.
 
-Next up: a spoken/voice-mode way to reset conversation history (text mode has `/reset`, voice mode doesn't yet), and a proper eval set for small-model tool-calling reliability. Issues and PRs welcome — the whole point of this repo is that people with modest hardware can actually run and improve it, not just read about it.
+Also in: a tool-calling reliability eval (`scripts/eval_tools.py`, see above) that caught and led to fixing a real bug where the model would claim a file action succeeded without ever calling `file_op`; CI (GitHub Actions) running the pytest suite on every push/PR; and the voice/text loops now catch and log a failed turn instead of the whole process dying or, in one specific case, deadlocking (`agent.run()` raising inside `voice_loop._speak_streaming`'s generator thread used to leave the consumer thread blocked on an empty queue forever — it now always signals completion via `finally`).
+
+Also in: dependency versions are now capped, not just floored — `pip install -e .` six months from now won't silently resolve a breaking release (this already happened once: `piper-tts`'s floor said `>=1.2.0` while the code had long since been fixed to require its *current*, incompatible-with-1.2 API after `>=1.8` removed `synthesize_stream_raw`; `ddgs`'s floor of `>=0.9.0` was similarly stale against its real current major, 9). And every `POTATO_*` env var is now validated at import time — a typo'd or out-of-range value (`POTATO_VAD_AGGRESSIVENESS=7`, `POTATO_LLM_CTX=banana`) fails immediately with a clear message instead of surfacing later as a cryptic error inside webrtcvad or llama.cpp.
+
+Issues and PRs welcome — the whole point of this repo is that people with modest hardware can actually run and improve it, not just read about it.
 
 ## License
 
