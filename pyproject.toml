@@ -4,15 +4,29 @@ version = "0.1.0"
 description = "A fully agentic voice LLM that runs smoothly on a laptop with no GPU."
 requires-python = ">=3.10"
 dependencies = [
-    "llama-cpp-python>=0.3.0",
-    "faster-whisper>=1.0.0",
-    "piper-tts>=1.2.0",
-    "sounddevice>=0.4.6",
-    "numpy>=1.26.0",
-    "ddgs>=0.9.0",
-    "webrtcvad>=2.0.10",
-    "py-cpuinfo>=9.0.0",
-    "psutil>=5.9.0",
+    # Pre-1.0 (0.x): capped at the next minor above the verified-working
+    # version, not the next major -- 0.x releases have no major boundary
+    # to lean on, and SemVer itself says minor bumps there may break
+    # anything. Tested against 0.3.36.
+    "llama-cpp-python>=0.3.0,<0.4.0",
+    "faster-whisper>=1.0.0,<2.0.0",
+    # Floor corrected from the original >=1.2.0: this code targets piper-
+    # tts's *current* synthesize() API, not the old synthesize_stream_raw
+    # it used to call before piper-tts >=1.8 removed that method (see
+    # tts.py's docstring / git history) -- >=1.2.0 would let pip resolve
+    # an incompatible older release. Capped tighter than the rest (next
+    # minor, not next major) because this exact package already broke
+    # this project's code within what should have been a safe bump once.
+    "piper-tts>=1.8.0,<1.9.0",
+    "sounddevice>=0.4.6,<0.6.0",
+    "numpy>=1.26.0,<3.0.0",
+    # Floor corrected from the original >=0.9.0: PyPI's ddgs is already on
+    # major version 9 (no 0.x release satisfies this project's actual
+    # usage), so that floor never corresponded to a real resolvable range.
+    "ddgs>=9.0.0,<10.0.0",
+    "webrtcvad>=2.0.10,<3.0.0",
+    "py-cpuinfo>=9.0.0,<10.0.0",
+    "psutil>=5.9.0,<8.0.0",
 ]
 
 [project.optional-dependencies]
