@@ -15,12 +15,18 @@ dependencies = [
     "psutil>=5.9.0",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+
 [project.scripts]
 potato-agent = "potato_agent.voice_loop:main"
 potato-agent-text = "potato_agent.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [build-system]
 requires = ["setuptools>=65"]

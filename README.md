@@ -89,6 +89,13 @@ potato-agent
 POTATO_PUSH_TO_TALK=1 potato-agent
 ```
 
+Run the test suite (no mic or model download needed):
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
 ## Tools the agent can use
 
 | Tool | What it does | Default |
@@ -126,7 +133,7 @@ Swap the LLM for anything else llama.cpp supports (bigger model if you have more
 
 ## Project status
 
-Early, and there's no automated test suite yet (that's the next real gap to close, not VAD tuning). What's been verified is manual, end-to-end, on real hardware: plain Q&A, calculator/file-op tool calls, barge-in, and streamed speech all run against a real mic and real speech, not just read through. If you hit false starts or missed utterances on your own mic/room, tune `POTATO_VAD_AGGRESSIVENESS` first and open an issue with what didn't work.
+Early. There's a pytest suite (`pytest`, 60+ cases) covering the pure-logic pieces that don't need a mic or a loaded model: the calculator's AST whitelist (rejects `__import__`, attribute access, name lookups), the file-op sandbox (path-traversal/absolute-path escapes), the shell tool's disabled-by-default and confirm-before-running behavior, the potato-tier boundaries, the TTS pause/prosody heuristics, and — the one that mattered most to get right — the streaming JSON decoder that lets TTS start speaking sentence 1 before the LLM finishes the rest of the reply, exercised char-by-char against a fake LLM. What's still manual, end-to-end, on real hardware: plain Q&A, barge-in, and streamed speech against a real mic and real speech — those aren't mocked anywhere, so if you hit false starts or missed utterances on your own mic/room, tune `POTATO_VAD_AGGRESSIVENESS` first and open an issue with what didn't work.
 
 Also in: barge-in, speculative decoding + flash attention, sentence-streamed TTS with punctuation-driven pauses, and a startup warmup that cuts first-turn latency from ~9-11s to ~2-3s.
 
