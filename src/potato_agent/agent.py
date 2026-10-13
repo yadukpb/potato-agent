@@ -121,9 +121,37 @@ RESPONSE_SCHEMA = {
 
 
 class Agent:
-    def __init__(self, llm: LocalLLM | None = None, max_steps: int | None = None):
+    def __init__(
+        self,
+        llm: LocalLLM | None = None,
+        max_steps: int | None = None,
+        history_turns: int | None = None,
+    ):
         self.llm = llm or LocalLLM()
         self.max_steps = max_steps or config.AGENT_MAX_STEPS
+        self.history_turns = config.AGENT_HISTORY_TURNS if history_turns is None else history_turns
+        # (user, assistant) messages from completed turns only -- a turn's
+        # internal tool-call/tool-result scratch never ends up here, just
+        # like it's never spoken (see run()'s on_sentence docstring).
+        self.history: list[dict] = []
+
+    def clear_history(self) -> None:
+        """Forget all prior turns. The next run() starts a fresh conversation
+        (still sharing SYSTEM_PROMPT, so warm_up()'s KV-cache benefit holds)."""
+        self.history = []
+
+    def _remember(self, user_input: str, answer: str) -> None:
+        self.history.append({"role": "user", "content": user_input})
+        self.history.append({"role": "assistant", "content": answer})
+        max_messages = self.history_turns * 2
+        if len(self.history) > max_messages:
+            # Drop the oldest pair(s). Note this means the *next* call's
+            # prompt no longer shares a full prefix with this one -- the
+            # llama-cpp-python KV-cache prefix match (see warm_up()) falls
+            # back to just SYSTEM_PROMPT for that one turn, not the full
+            # history. A real cost, but bounded context beats an ever-
+            # growing prompt that eventually crowds out the tool docs.
+            self.history = self.history[-max_messages:]
 
     def warm_up(self) -> None:
         """Pre-fills the KV cache with SYSTEM_PROMPT and pays llama.cpp's
@@ -158,9 +186,16 @@ class Agent:
         TTS can start speaking immediately instead of waiting for the whole
         reply. It only ever fires for the turn that produces final_answer;
         tool-call steps are internal and never spoken.
+
+        Prior turns are included via self.history, so a follow-up question
+        ("what about in Celsius?") has context from what was actually asked
+        and answered before -- not from this turn's own tool-call scratch,
+        which is discarded once a final_answer is reached. See clear_history()
+        to start a fresh conversation.
         """
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
+            *self.history,
             {"role": "user", "content": user_input},
         ]
 
@@ -211,10 +246,14 @@ class Agent:
             except json.JSONDecodeError:
                 # Shouldn't happen — the grammar guarantees valid JSON — but
                 # don't crash the loop if it somehow does.
-                return raw.strip()
+                answer = raw.strip()
+                self._remember(user_input, answer)
+                return answer
 
             if "final_answer" in parsed:
-                return str(parsed["final_answer"]).strip()
+                answer = str(parsed["final_answer"]).strip()
+                self._remember(user_input, answer)
+                return answer
 
             tool_name = parsed.get("tool")
             tool_args = parsed.get("args", {})
@@ -230,4 +269,6 @@ class Agent:
             messages.append({"role": "assistant", "content": raw})
             messages.append({"role": "user", "content": f"Tool result: {observation}"})
 
-        return "I couldn't finish within the step limit — try rephrasing or simplifying the request."
+        answer = "I couldn't finish within the step limit — try rephrasing or simplifying the request."
+        self._remember(user_input, answer)
+        return answer

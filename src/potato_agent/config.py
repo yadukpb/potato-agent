@@ -19,6 +19,12 @@ WHISPER_COMPUTE_TYPE = os.environ.get("POTATO_WHISPER_COMPUTE", "int8")
 PIPER_VOICE_PATH = Path(os.environ.get("POTATO_PIPER_VOICE", MODELS_DIR / "en_US-lessac-medium.onnx"))
 
 AGENT_MAX_STEPS = int(os.environ.get("POTATO_AGENT_MAX_STEPS", "6"))
+# How many (user, assistant) turn-pairs of conversation history to keep.
+# Bounded because the context window (LLM_CTX_SIZE) is finite and small on
+# CPU-friendly models/configs -- unbounded history would eventually crowd
+# out the system prompt and tool docs. Tool-call scratch steps within a
+# single turn are never stored, only the final exchange (see agent.py).
+AGENT_HISTORY_TURNS = int(os.environ.get("POTATO_HISTORY_TURNS", "6"))
 AGENT_WORKSPACE = Path(os.environ.get("POTATO_WORKSPACE", ROOT / "workspace"))
 SHELL_TOOL_ENABLED = os.environ.get("POTATO_ALLOW_SHELL", "0") == "1"
 

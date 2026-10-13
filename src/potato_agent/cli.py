@@ -3,7 +3,7 @@ from .agent import Agent
 
 
 def main():
-    print("potato-agent (text mode). Ctrl+C to exit.\n")
+    print("potato-agent (text mode). /reset clears conversation history. Ctrl+C to exit.\n")
     agent = Agent()
     agent.warm_up()  # pays the LLM's one-time ~7s first-call cost now, not on your first message
     while True:
@@ -13,6 +13,10 @@ def main():
             print("\nbye.")
             break
         if not user_input:
+            continue
+        if user_input == "/reset":
+            agent.clear_history()
+            print("(conversation history cleared)\n")
             continue
         answer = agent.run(user_input)
         print(f"agent> {answer}\n")

@@ -53,6 +53,8 @@ By default (`potato-agent`) the mic is always listening; you don't press anythin
 
 **Startup warmup**: the first LLM call in a process pays a one-time ~7-9s cost (llama.cpp backend/thread-pool init), and separately, llama-cpp-python caches the longest matching prompt *prefix* across calls and skips re-evaluating it. Since every turn's prompt starts with the same system prompt, `Agent.warm_up()` pre-runs a throwaway generation with that exact prompt during "Loading models...", so the KV cache is already warm by the time you can talk — dropped the first real turn from ~9-11s to ~2-3s.
 
+**Conversation memory**: `Agent` keeps the last `POTATO_HISTORY_TURNS` (user, assistant) pairs from completed turns and includes them in every subsequent prompt, so a follow-up ("what about in Celsius?") actually has context from what you asked and were told before. A turn's internal tool-call/tool-result scratch is never kept, only the final exchange — the same thing that is and isn't spoken (see `agent.py`'s `run()` docstring). History is bounded because the context window is small and finite; once it fills, the oldest pair is dropped, which also means that one turn's prompt no longer shares a full prefix with the previous one, so it misses the llama-cpp-python KV-cache win described above just for that turn. In the text REPL, type `/reset` to start a fresh conversation; in voice mode, restarting the process is currently the only way (same as it always was) — a spoken reset command is easy to add but isn't wired up yet.
+
 Heads up if you're extending the VAD: webrtcvad is tuned for real speech/silence, not synthetic test signals — pure white noise can trip it at any aggressiveness setting, so don't use a synthetic sine/noise generator to validate changes here. Test with your actual mic and room.
 
 ### Why not llama.cpp's built-in OpenAI-style tool calling?
@@ -122,6 +124,7 @@ All via environment variables (see `src/potato_agent/config.py`):
 | `POTATO_LLM_NGRAM_SIZE` / `POTATO_LLM_NUM_PRED_TOKENS` | `2` / `10` | speculative decoding tuning (max n-gram size, predicted tokens) |
 | `POTATO_WHISPER_MODEL` | `base.en` | faster-whisper model size |
 | `POTATO_AGENT_MAX_STEPS` | `6` | tool-call steps before giving up |
+| `POTATO_HISTORY_TURNS` | `6` | how many (user, assistant) turn-pairs of conversation history to keep |
 | `POTATO_ALLOW_SHELL` | `0` | enable the shell tool |
 | `POTATO_VAD_AGGRESSIVENESS` | `2` | 0-3, higher = more strict about filtering non-speech |
 | `POTATO_PUSH_TO_TALK` | `0` | fall back to manual press-Enter instead of continuous listening |
@@ -135,9 +138,9 @@ Swap the LLM for anything else llama.cpp supports (bigger model if you have more
 
 Early. There's a pytest suite (`pytest`, 60+ cases) covering the pure-logic pieces that don't need a mic or a loaded model: the calculator's AST whitelist (rejects `__import__`, attribute access, name lookups), the file-op sandbox (path-traversal/absolute-path escapes), the shell tool's disabled-by-default and confirm-before-running behavior, the potato-tier boundaries, the TTS pause/prosody heuristics, and — the one that mattered most to get right — the streaming JSON decoder that lets TTS start speaking sentence 1 before the LLM finishes the rest of the reply, exercised char-by-char against a fake LLM. What's still manual, end-to-end, on real hardware: plain Q&A, barge-in, and streamed speech against a real mic and real speech — those aren't mocked anywhere, so if you hit false starts or missed utterances on your own mic/room, tune `POTATO_VAD_AGGRESSIVENESS` first and open an issue with what didn't work.
 
-Also in: barge-in, speculative decoding + flash attention, sentence-streamed TTS with punctuation-driven pauses, and a startup warmup that cuts first-turn latency from ~9-11s to ~2-3s.
+Also in: barge-in, speculative decoding + flash attention, sentence-streamed TTS with punctuation-driven pauses, a startup warmup that cuts first-turn latency from ~9-11s to ~2-3s, and bounded multi-turn conversation memory.
 
-Next up: multi-turn conversation memory (each turn currently only shares the system prompt, not prior turns — a real follow-up question won't have context from what you asked before), and a proper eval set for small-model tool-calling reliability. Issues and PRs welcome — the whole point of this repo is that people with modest hardware can actually run and improve it, not just read about it.
+Next up: a spoken/voice-mode way to reset conversation history (text mode has `/reset`, voice mode doesn't yet), and a proper eval set for small-model tool-calling reliability. Issues and PRs welcome — the whole point of this repo is that people with modest hardware can actually run and improve it, not just read about it.
 
 ## License
 
